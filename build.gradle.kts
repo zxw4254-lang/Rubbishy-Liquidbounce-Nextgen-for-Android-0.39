@@ -318,16 +318,6 @@ detekt {
     baseline = file("${rootProject.projectDir}/config/detekt/baseline.xml")
 }
 
-// Generate SARIF reports for GitHub CodeQL integration
-tasks.withType<io.gitlab.arturbosch.detekt.Detekt>().configureEach {
-    reports {
-        sarif.required.set(true)
-        sarif.outputLocation.set(
-            layout.buildDirectory.file("reports/detekt/detekt.sarif")
-        )
-    }
-}
-
 tasks.register<DetektCreateBaselineTask>("detektProjectBaseline") {
     description = "Overrides current baseline."
     ignoreFailures.set(true)
