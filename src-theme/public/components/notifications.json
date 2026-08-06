@@ -1,0 +1,12 @@
+{
+  "name": "Notifications",
+  "description": "Displays client notifications.",
+  "enabled": true,
+  "singleton": true,
+  "alignment": {
+    "horizontalAlignment": "Right",
+    "horizontalOffset": 15,
+    "verticalAlignment": "Bottom",
+    "verticalOffset": 5
+  }
+}
