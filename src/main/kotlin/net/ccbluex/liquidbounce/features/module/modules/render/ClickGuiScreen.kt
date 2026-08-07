@@ -7,16 +7,22 @@ import net.ccbluex.liquidbounce.features.module.ModuleCategories
 import net.ccbluex.liquidbounce.features.module.ModuleManager
 import net.minecraft.client.Minecraft
 import net.minecraft.client.gui.Font
-import net.minecraft.client.gui.GuiGraphics
-import net.minecraft.client.gui.screens.Screen
-import net.minecraft.network.chat.Component
+import net.minecraft.client.gui.DrawContext
+import net.minecraft.client.gui.screen.Screen
+import net.minecraft.client.gui.ClickableWidget
+import net.minecraft.client.input.KeyInput
+import net.minecraft.client.gui.navigation.GuiNavigation
+import net.minecraft.client.gui.event.MouseButtonEvent
+import net.minecraft.client.gui.event.KeyEvent
+import net.minecraft.client.gui.event.CharacterEvent
+import net.minecraft.text.Text
 import org.lwjgl.glfw.GLFW
 import java.awt.Color
 import kotlin.math.cos
 import kotlin.math.max
 import kotlin.math.sin
 
-class ClickGuiScreen : Screen(Component.literal("ClickGUI")) {
+class ClickGuiScreen : Screen(Text.literal("ClickGUI")) {
 
     private var cat = 0
     private var expanded: ClientModule? = null
@@ -42,18 +48,18 @@ class ClickGuiScreen : Screen(Component.literal("ClickGUI")) {
     private val headerBg = 0xF0000000.toInt()
     private val textGray = 0xFFA0A0AA.toInt()
 
-    override fun isPauseScreen() = false
+    override fun shouldPause() = false
     override fun shouldCloseOnEsc() = true
 
-    private fun drawString(graphics: GuiGraphics, font: Font, text: String, x: Int, y: Int, color: Int) {
-        graphics.drawString(font, text, x, y, color, false)
+    private fun drawString(context: DrawContext, font: Font, text: String, x: Int, y: Int, color: Int) {
+        context.drawText(font, text, x, y, color, false)
     }
 
-    private fun fillRoundedRect(graphics: GuiGraphics, x1: Float, y1: Float, x2: Float, y2: Float, radius: Float, color: Int) {
+    private fun fillRoundedRect(context: DrawContext, x1: Float, y1: Float, x2: Float, y2: Float, radius: Float, color: Int) {
         val r = radius.coerceAtMost((x2 - x1) / 2f).coerceAtMost((y2 - y1) / 2f)
-        graphics.fill((x1 + r).toInt(), y1.toInt(), (x2 - r).toInt(), y2.toInt(), color)
-        graphics.fill(x1.toInt(), (y1 + r).toInt(), (x1 + r).toInt(), (y2 - r).toInt(), color)
-        graphics.fill((x2 - r).toInt(), (y1 + r).toInt(), x2.toInt(), (y2 - r).toInt(), color)
+        context.fill((x1 + r).toInt(), y1.toInt(), (x2 - r).toInt(), y2.toInt(), color)
+        context.fill(x1.toInt(), (y1 + r).toInt(), (x1 + r).toInt(), (y2 - r).toInt(), color)
+        context.fill((x2 - r).toInt(), (y1 + r).toInt(), x2.toInt(), (y2 - r).toInt(), color)
 
         val corners = arrayOf(
             floatArrayOf(x1 + r, y1 + r, 180f, 270f),
@@ -77,16 +83,16 @@ class ClickGuiScreen : Screen(Component.literal("ClickGUI")) {
                 val maxX = cx.coerceAtLeast(px1).coerceAtLeast(px2).toInt()
                 val minY = cy.coerceAtMost(py1).coerceAtMost(py2).toInt()
                 val maxY = cy.coerceAtLeast(py1).coerceAtLeast(py2).toInt()
-                graphics.fill(minX, minY, max(minX + 1, maxX), max(minY + 1, maxY), color)
+                context.fill(minX, minY, max(minX + 1, maxX), max(minY + 1, maxY), color)
                 a += 10f
             }
         }
     }
 
     private fun trimText(font: Font, text: String, maxW: Int): String {
-        if (font.width(text) <= maxW) return text
+        if (font.getWidth(text) <= maxW) return text
         var str = text
-        while (str.isNotEmpty() && font.width("$str...") > maxW) {
+        while (str.isNotEmpty() && font.getWidth("$str...") > maxW) {
             str = str.substring(0, str.length - 1)
         }
         return "$str..."
@@ -330,7 +336,7 @@ class ClickGuiScreen : Screen(Component.literal("ClickGUI")) {
         }
     }
 
-    override fun render(graphics: GuiGraphics, mx: Int, my: Int, dt: Float) {
+    override fun render(context: DrawContext, mx: Int, my: Int, dt: Float) {
         val clientInstance = Minecraft.getInstance()
         anim += (1f - anim) * 0.25f
         val a = anim.coerceIn(0f, 1f)
@@ -338,43 +344,44 @@ class ClickGuiScreen : Screen(Component.literal("ClickGUI")) {
 
         if (flash > 0f) flash -= dt / 3f else flash = 0f
 
-        val x = (clientInstance.window.guiScaledWidth - W) / 2f
-        val y = (clientInstance.window.guiScaledHeight - H) / 2f
-        val f = clientInstance.font
+        val window = clientInstance.window
+        val x = (window.scaledWidth - W) / 2f
+        val y = (window.scaledHeight - H) / 2f
+        val f = clientInstance.textRenderer
         val tabW = (W - 24) / cats.size
 
         val R = 8f
-        fillRoundedRect(graphics, x, y, x + W, y + H, R, bg)
+        fillRoundedRect(context, x, y, x + W, y + H, R, bg)
         
-        graphics.fill(x.toInt() + R.toInt(), y.toInt(), (x + W - R).toInt(), (y + 24).toInt(), headerBg)
-        drawString(graphics, f, "§lClickGUI", x.toInt() + 10, y.toInt() + 5, accent)
+        context.fill(x.toInt() + R.toInt(), y.toInt(), (x + W - R).toInt(), (y + 24).toInt(), headerBg)
+        drawString(context, f, "§lClickGUI", x.toInt() + 10, y.toInt() + 5, accent)
 
         val searchY = y + 28
-        graphics.fill(x.toInt() + 8, searchY.toInt(), (x + W - 8).toInt(), (searchY + 15).toInt(), 0x28000000.toInt())
+        context.fill(x.toInt() + 8, searchY.toInt(), (x + W - 8).toInt(), (searchY + 15).toInt(), 0x28000000.toInt())
         val disp = if (search.isEmpty()) "§7Search modules..." else "§f$search"
-        drawString(graphics, f, trimText(f, disp, W - 30), x.toInt() + 12, searchY.toInt() + 2, -1)
+        drawString(context, f, trimText(f, disp, W - 30), x.toInt() + 12, searchY.toInt() + 2, -1)
         if (searchFocus) {
-            val cx = x.toInt() + 12 + f.width(search)
-            if (cx < x + W - 12) graphics.fill(cx, searchY.toInt() + 2, cx + 1, searchY.toInt() + 13, 0xFFFFFFFF.toInt())
+            val cx = x.toInt() + 12 + f.getWidth(search)
+            if (cx < x + W - 12) context.fill(cx, searchY.toInt() + 2, cx + 1, searchY.toInt() + 13, 0xFFFFFFFF.toInt())
         }
 
         val tabY = searchY + 20
-        graphics.fill(x.toInt() + 4, tabY.toInt(), (x + W - 4).toInt(), (tabY + 20).toInt(), 0x18000000.toInt())
+        context.fill(x.toInt() + 4, tabY.toInt(), (x + W - 4).toInt(), (tabY + 20).toInt(), 0x18000000.toInt())
         for (i in cats.indices) {
             val tx = x + 8 + i * tabW
             val sel = i == cat
             if (sel) {
-                graphics.fill(tx.toInt(), tabY.toInt(), (tx + tabW - 2).toInt(), (tabY + 20).toInt(), accent)
+                context.fill(tx.toInt(), tabY.toInt(), (tx + tabW - 2).toInt(), (tabY + 20).toInt(), accent)
             } else if (mx in tx.toInt()..(tx + tabW - 2).toInt() && my in tabY.toInt()..(tabY + 20).toInt()) {
-                graphics.fill(tx.toInt(), tabY.toInt(), (tx + tabW - 2).toInt(), (tabY + 20).toInt(), 0x20FFFFFF.toInt())
+                context.fill(tx.toInt(), tabY.toInt(), (tx + tabW - 2).toInt(), (tabY + 20).toInt(), 0x20FFFFFF.toInt())
             }
             val tagStr = trimText(f, cats[i].tag, tabW - 4)
-            val cw = f.width(tagStr)
-            drawString(graphics, f, tagStr, tx.toInt() + ((tabW - 2) - cw) / 2, tabY.toInt() + 4, if (sel) -1 else textGray)
+            val cw = f.getWidth(tagStr)
+            drawString(context, f, tagStr, tx.toInt() + ((tabW - 2) - cw) / 2, tabY.toInt() + 4, if (sel) -1 else textGray)
         }
 
         val divY = tabY + 22
-        graphics.fill(x.toInt() + 8, divY.toInt(), (x + W - 8).toInt(), (divY + 1).toInt(), 0x20FFFFFF.toInt())
+        context.fill(x.toInt() + 8, divY.toInt(), (x + W - 8).toInt(), (divY + 1).toInt(), 0x20FFFFFF.toInt())
 
         val mods = getMods()
         val listRight = x + W - panelW - 8
@@ -385,7 +392,7 @@ class ClickGuiScreen : Screen(Component.literal("ClickGUI")) {
         tOff = max(0f, tOff.coerceAtMost(max(0f, mods.size * rowH - listH)))
         sOff += (tOff - sOff) * 0.3f * a
 
-        graphics.enableScissor(x.toInt(), listY.toInt(), listRight.toInt(), (listY + listH).toInt())
+        context.enableScissor(x.toInt(), listY.toInt(), listRight.toInt(), (listY + listH).toInt())
 
         for (i in mods.indices) {
             val mod = mods[i]
@@ -394,15 +401,15 @@ class ClickGuiScreen : Screen(Component.literal("ClickGUI")) {
             val mi = my2.toInt()
             val hov = mx in (x.toInt() + 8)..listRight.toInt() && my in mi..(mi + rowH)
 
-            if (hov) graphics.fill(x.toInt() + 8, mi, listRight.toInt(), mi + rowH, 0x14FFFFFF.toInt())
+            if (hov) context.fill(x.toInt() + 8, mi, listRight.toInt(), mi + rowH, 0x14FFFFFF.toInt())
             if (flash > 0f && flashRow == i) {
                 val fa = (flash * 80).toInt()
-                graphics.fill(x.toInt() + 8, mi, listRight.toInt(), mi + rowH, (fa shl 24) or 0x00FFFFFF)
+                context.fill(x.toInt() + 8, mi, listRight.toInt(), mi + rowH, (fa shl 24) or 0x00FFFFFF)
             }
 
             val isExpandedMod = expanded == mod
             val nameText = trimText(f, (if (isExpandedMod) "§n" else "") + mod.name, (listRight - x - 45).toInt())
-            drawString(graphics, f, nameText, x.toInt() + 14, mi + 3, if (mod.enabled) accent else textGray)
+            drawString(context, f, nameText, x.toInt() + 14, mi + 3, if (mod.enabled) accent else textGray)
 
             val switchW = 24
             val switchH = 12
@@ -410,14 +417,14 @@ class ClickGuiScreen : Screen(Component.literal("ClickGUI")) {
             val btnY = mi + (rowH - switchH) / 2
 
             if (mod.enabled) {
-                graphics.fill(btnX, btnY, btnX + switchW, btnY + switchH, accent)
-                graphics.fill(btnX + switchW - 10, btnY + 2, btnX + switchW - 2, btnY + switchH - 2, 0xFFFFFFFF.toInt())
+                context.fill(btnX, btnY, btnX + switchW, btnY + switchH, accent)
+                context.fill(btnX + switchW - 10, btnY + 2, btnX + switchW - 2, btnY + switchH - 2, 0xFFFFFFFF.toInt())
             } else {
-                graphics.fill(btnX, btnY, btnX + switchW, btnY + switchH, 0x30FFFFFF.toInt())
-                graphics.fill(btnX + 2, btnY + 2, btnX + 10, btnY + switchH - 2, 0xAA808080.toInt())
+                context.fill(btnX, btnY, btnX + switchW, btnY + switchH, 0x30FFFFFF.toInt())
+                context.fill(btnX + 2, btnY + 2, btnX + 10, btnY + switchH - 2, 0xAA808080.toInt())
             }
         }
-        graphics.disableScissor()
+        context.disableScissor()
 
         val curExp = expanded
         if (curExp != null) {
@@ -425,7 +432,7 @@ class ClickGuiScreen : Screen(Component.literal("ClickGUI")) {
             val py = listY
             val maxTextW = panelW - 28
 
-            fillRoundedRect(graphics, px, py, x + W - 2, y + H - 2, 4f, panelBg)
+            fillRoundedRect(context, px, py, x + W - 2, y + H - 2, 4f, panelBg)
 
             val visibleValues = getVisibleValues(curExp)
             val paddingTop = 8f
@@ -445,7 +452,7 @@ class ClickGuiScreen : Screen(Component.literal("ClickGUI")) {
             tOff2 = max(0f, tOff2.coerceAtMost(max(0f, totalContentH - setH)))
             sOff2 += (tOff2 - sOff2) * 0.3f
 
-            graphics.enableScissor(px.toInt(), (py + 4).toInt(), (x + W - 2).toInt(), (y + H - 6).toInt())
+            context.enableScissor(px.toInt(), (py + 4).toInt(), (x + W - 2).toInt(), (y + H - 6).toInt())
 
             var curY = setY - sOff2
             for ((v, depth) in visibleValues) {
@@ -472,16 +479,16 @@ class ClickGuiScreen : Screen(Component.literal("ClickGUI")) {
                                 val pureName = getGroupName(v)
                                 val groupName = trimText(f, "$arrow §l$pureName", maxTextW - indent)
                                 
-                                graphics.fill(px.toInt() + 4 + indent, mi2, (x + W - 6).toInt(), mi2 + 16, 0x1FFFFFFF.toInt())
-                                drawString(graphics, f, groupName, px.toInt() + 8 + indent, mi2 + 4, -1)
+                                context.fill(px.toInt() + 4 + indent, mi2, (x + W - 6).toInt(), mi2 + 16, 0x1FFFFFFF.toInt())
+                                drawString(context, f, groupName, px.toInt() + 8 + indent, mi2 + 4, -1)
                             }
                             isColor -> {
                                 val c = extractColor(v)
                                 val text = trimText(f, "${v.name}:", maxTextW - indent)
-                                drawString(graphics, f, text, px.toInt() + 8 + indent, mi2, -1)
+                                drawString(context, f, text, px.toInt() + 8 + indent, mi2, -1)
 
                                 val hexStr = "#%02X%02X%02X%02X".format(c.alpha, c.red, c.green, c.blue)
-                                drawString(graphics, f, "§7$hexStr", px.toInt() + 8 + indent, mi2 + 12, -1)
+                                drawString(context, f, "§7$hexStr", px.toInt() + 8 + indent, mi2 + 12, -1)
 
                                 val boxX = px.toInt() + 8 + indent
                                 val boxY = mi2 + 24
@@ -494,43 +501,43 @@ class ClickGuiScreen : Screen(Component.literal("ClickGUI")) {
                                         val sat = gx.toFloat() / boxW
                                         val valStep = 1f - (gy.toFloat() / boxH)
                                         val rgb = Color.HSBtoRGB(hsv[0], sat, valStep)
-                                        graphics.fill(boxX + gx, boxY + gy, boxX + gx + 3, boxY + gy + 3, rgb or 0xFF000000.toInt())
+                                        context.fill(boxX + gx, boxY + gy, boxX + gx + 3, boxY + gy + 3, rgb or 0xFF000000.toInt())
                                     }
                                 }
                                 val circleX = boxX + (hsv[1] * boxW).toInt()
                                 val circleY = boxY + ((1f - hsv[2]) * boxH).toInt()
-                                graphics.fill(circleX - 2, circleY - 2, circleX + 2, circleY + 2, 0xFFFFFFFF.toInt())
+                                context.fill(circleX - 2, circleY - 2, circleX + 2, circleY + 2, 0xFFFFFFFF.toInt())
 
                                 val hueX = boxX + boxW + 6
                                 val barW = 8
                                 for (gh in 0 until boxH step 2) {
                                     val hueStep = gh.toFloat() / boxH
                                     val rgb = Color.HSBtoRGB(hueStep, 1f, 1f)
-                                    graphics.fill(hueX, boxY + gh, hueX + barW, boxY + gh + 2, rgb or 0xFF000000.toInt())
+                                    context.fill(hueX, boxY + gh, hueX + barW, boxY + gh + 2, rgb or 0xFF000000.toInt())
                                 }
                                 val hueY = boxY + (hsv[0] * boxH).toInt()
-                                graphics.fill(hueX - 1, hueY - 1, hueX + barW + 1, hueY + 1, 0xFFFFFFFF.toInt())
+                                context.fill(hueX - 1, hueY - 1, hueX + barW + 1, hueY + 1, 0xFFFFFFFF.toInt())
 
                                 val alphaX = hueX + barW + 5
                                 for (ga in 0 until boxH step 2) {
                                     val aRatio = 1f - (ga.toFloat() / boxH)
                                     val aInt = (aRatio * 255).toInt()
-                                    graphics.fill(alphaX, boxY + ga, alphaX + barW, boxY + ga + 2, (aInt shl 24) or (c.rgb and 0x00FFFFFF))
+                                    context.fill(alphaX, boxY + ga, alphaX + barW, boxY + ga + 2, (aInt shl 24) or (c.rgb and 0x00FFFFFF))
                                 }
                                 val alphaY = boxY + ((1f - (c.alpha / 255f)) * boxH).toInt()
-                                graphics.fill(alphaX - 1, alphaY - 1, alphaX + barW + 1, alphaY + 1, 0xFFFFFFFF.toInt())
+                                context.fill(alphaX - 1, alphaY - 1, alphaX + barW + 1, alphaY + 1, 0xFFFFFFFF.toInt())
 
                                 val swatchX = alphaX + barW + 5
-                                graphics.fill(swatchX, boxY, swatchX + 10, boxY + boxH, c.rgb)
+                                context.fill(swatchX, boxY, swatchX + 10, boxY + boxH, c.rgb)
                             }
                             actualVal is Boolean -> {
                                 val text = trimText(f, "${v.name}: ${if (actualVal) "§aON" else "§cOFF"}", maxTextW - indent)
-                                drawString(graphics, f, text, px.toInt() + 8 + indent, mi2 + 2, -1)
+                                drawString(context, f, text, px.toInt() + 8 + indent, mi2 + 2, -1)
                             }
                             isBindValue(v) -> {
                                 val dispStr = formatDisplayValue(v)
                                 val text = trimText(f, "${v.name}: §e$dispStr", maxTextW - indent)
-                                drawString(graphics, f, text, px.toInt() + 8 + indent, mi2 + 2, -1)
+                                drawString(context, f, text, px.toInt() + 8 + indent, mi2 + 2, -1)
                             }
                             isSlider -> {
                                 var fv = 0f; var mn = 0f; var mxr = 20f
@@ -547,33 +554,35 @@ class ClickGuiScreen : Screen(Component.literal("ClickGUI")) {
 
                                 val bw = panelW - 16 - indent; val bh = 4
                                 val bx = px.toInt() + 8 + indent; val by = mi2 + 13
-                                graphics.fill(bx, by, bx + bw, by + bh, 0x30000000.toInt())
+                                context.fill(bx, by, bx + bw, by + bh, 0x30000000.toInt())
                                 val r = ((fv - mn) / max(0.001f, mxr - mn)).coerceIn(0f, 1f)
-                                graphics.fill(bx, by, (bx + bw * r).toInt(), by + bh, accent)
+                                context.fill(bx, by, (bx + bw * r).toInt(), by + bh, accent)
 
                                 val dispVal = if (actualVal is ClosedRange<*>) "${actualVal.start} - ${actualVal.endInclusive}" else "%.1f".format(fv)
                                 val text = trimText(f, "${v.name}: $dispVal", maxTextW - indent)
-                                drawString(graphics, f, text, px.toInt() + 8 + indent, mi2, -1)
+                                drawString(context, f, text, px.toInt() + 8 + indent, mi2, -1)
                             }
                             else -> {
                                 val dispStr = formatDisplayValue(v)
                                 val text = trimText(f, "${v.name}: §b$dispStr", maxTextW - indent)
-                                drawString(graphics, f, text, px.toInt() + 8 + indent, mi2 + 2, -1)
+                                drawString(context, f, text, px.toInt() + 8 + indent, mi2 + 2, -1)
                             }
                         }
                     } catch (_: Exception) {}
                 }
                 curY += itemH
             }
-            graphics.disableScissor()
+            context.disableScissor()
         }
     }
 
-    override fun mouseClicked(mouseX: Double, mouseY: Double, button: Int): Boolean {
+    override fun mouseClicked(event: MouseButtonEvent, doubleClick: Boolean): Boolean {
         val clientInstance = Minecraft.getInstance()
-        val mx = mouseX.toInt(); val my = mouseY.toInt()
-        val x = (clientInstance.window.guiScaledWidth - W) / 2
-        val y = (clientInstance.window.guiScaledHeight - H) / 2
+        val mx = event.x.toInt(); val my = event.y.toInt()
+        val button = event.button
+        val window = clientInstance.window
+        val x = (window.scaledWidth - W) / 2
+        val y = (window.scaledHeight - H) / 2
         val tabW = (W - 24) / cats.size
 
         if (mx in (x + 8)..(x + W - 8) && my in (y + 28)..(y + 43)) {
@@ -737,22 +746,24 @@ class ClickGuiScreen : Screen(Component.literal("ClickGUI")) {
             }
         }
 
-        return super.mouseClicked(mouseX, mouseY, button)
+        return super.mouseClicked(event, doubleClick)
     }
 
-    override fun mouseScrolled(mouseX: Double, mouseY: Double, amount: Double): Boolean {
+    override fun mouseScrolled(x: Double, y: Double, scrollX: Double, scrollY: Double): Boolean {
         val clientInstance = Minecraft.getInstance()
-        val x = (clientInstance.window.guiScaledWidth - W) / 2
-        val panelX = x + W - panelW - 2
-        if (expanded != null && mouseX >= panelX) {
-            tOff2 = (tOff2 - amount.toFloat() * 18f).coerceAtLeast(0f)
+        val window = clientInstance.window
+        val xPos = (window.scaledWidth - W) / 2
+        val panelX = xPos + W - panelW - 2
+        if (expanded != null && x >= panelX) {
+            tOff2 = (tOff2 - scrollY.toFloat() * 18f).coerceAtLeast(0f)
         } else {
-            tOff = (tOff - amount.toFloat() * 18f).coerceAtLeast(0f)
+            tOff = (tOff - scrollY.toFloat() * 18f).coerceAtLeast(0f)
         }
         return true
     }
 
-    override fun keyPressed(keyCode: Int, scanCode: Int, modifiers: Int): Boolean {
+    override fun keyPressed(event: KeyEvent): Boolean {
+        val keyCode = event.key
         val lv = listeningValue
         if (lv != null) {
             val targetKeyName = if (keyCode == GLFW.GLFW_KEY_ESCAPE || keyCode == GLFW.GLFW_KEY_DELETE) "NONE" else GLFW.glfwGetKeyName(keyCode, 0)?.uppercase() ?: "KEY_$keyCode"
@@ -782,7 +793,7 @@ class ClickGuiScreen : Screen(Component.literal("ClickGUI")) {
         }
 
         if (keyCode == GLFW.GLFW_KEY_ESCAPE) {
-            onClose()
+            close()
             return true
         }
 
@@ -805,20 +816,21 @@ class ClickGuiScreen : Screen(Component.literal("ClickGUI")) {
                 }
             }
         }
-        return super.keyPressed(keyCode, scanCode, modifiers)
+        return super.keyPressed(event)
     }
 
-    override fun charTyped(codePoint: Char, modifiers: Int): Boolean {
+    override fun charTyped(event: CharacterEvent): Boolean {
+        val codePoint = event.codepoint
         if (searchFocus) {
-            if (codePoint.code > 31) {
-                search += codePoint
+            if (codePoint > 31) {
+                search += codePoint.toChar()
                 return true
             }
         }
-        return super.charTyped(codePoint, modifiers)
+        return super.charTyped(event)
     }
 
-    override fun onClose() {
+    override fun close() {
         Minecraft.getInstance().setScreen(null)
         anim = 0f
     }
