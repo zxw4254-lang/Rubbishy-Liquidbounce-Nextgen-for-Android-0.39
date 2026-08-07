@@ -5,20 +5,21 @@ import net.ccbluex.liquidbounce.config.types.Value
 import net.ccbluex.liquidbounce.features.module.ClientModule
 import net.ccbluex.liquidbounce.features.module.ModuleCategories
 import net.ccbluex.liquidbounce.features.module.ModuleManager
-import net.minecraft.client.gui.Font
-import net.minecraft.client.gui.GuiGraphics
-import net.minecraft.client.gui.screens.Screen
+import net.minecraft.client.MinecraftClient
+import net.minecraft.client.font.TextRenderer
+import net.minecraft.client.gui.DrawContext
+import net.minecraft.client.gui.screen.Screen
 import net.minecraft.client.input.CharacterEvent
 import net.minecraft.client.input.KeyEvent
 import net.minecraft.client.input.MouseButtonEvent
-import net.minecraft.network.chat.Component
+import net.minecraft.text.Text
 import org.lwjgl.glfw.GLFW
 import java.awt.Color
 import kotlin.math.cos
 import kotlin.math.max
 import kotlin.math.sin
 
-class ClickGuiScreen : Screen(Component.literal("ClickGUI")) {
+class ClickGuiScreen : Screen(Text.literal("ClickGUI")) {
 
     private var cat = 0
     private var expanded: ClientModule? = null
@@ -44,10 +45,15 @@ class ClickGuiScreen : Screen(Component.literal("ClickGUI")) {
     private val headerBg = 0xF0000000.toInt()
     private val textGray = 0xFFA0A0AA.toInt()
 
-    override fun isPauseScreen() = false
+    override fun shouldPause() = false
     override fun shouldCloseOnEsc() = true
 
-    private fun fillRoundedRect(ctx: GuiGraphics, x1: Float, y1: Float, x2: Float, y2: Float, radius: Float, color: Int) {
+    // 针对 Yarn 映射表的文字绘制适配器
+    private fun drawString(ctx: DrawContext, font: TextRenderer, text: String, x: Int, y: Int, color: Int) {
+        ctx.drawText(font, text, x, y, color, false)
+    }
+
+    private fun fillRoundedRect(ctx: DrawContext, x1: Float, y1: Float, x2: Float, y2: Float, radius: Float, color: Int) {
         val r = radius.coerceAtMost((x2 - x1) / 2f).coerceAtMost((y2 - y1) / 2f)
         ctx.fill((x1 + r).toInt(), y1.toInt(), (x2 - r).toInt(), y2.toInt(), color)
         ctx.fill(x1.toInt(), (y1 + r).toInt(), (x1 + r).toInt(), (y2 - r).toInt(), color)
@@ -81,10 +87,10 @@ class ClickGuiScreen : Screen(Component.literal("ClickGUI")) {
         }
     }
 
-    private fun trimText(font: Font, text: String, maxW: Int): String {
-        if (font.width(text) <= maxW) return text
+    private fun trimText(font: TextRenderer, text: String, maxW: Int): String {
+        if (font.getWidth(text) <= maxW) return text
         var str = text
-        while (str.isNotEmpty() && font.width("$str...") > maxW) {
+        while (str.isNotEmpty() && font.getWidth("$str...") > maxW) {
             str = str.substring(0, str.length - 1)
         }
         return "$str..."
@@ -157,7 +163,6 @@ class ClickGuiScreen : Screen(Component.literal("ClickGUI")) {
     private fun getVisibleValues(module: ClientModule): List<Pair<Value<*>, Int>> {
         val result = mutableListOf<Pair<Value<*>, Int>>()
         
-        // 1. 获取原始设置项
         val rawValues = try {
             module.collectValuesRecursively()
         } catch (e: Exception) {
@@ -168,7 +173,6 @@ class ClickGuiScreen : Screen(Component.literal("ClickGUI")) {
             }
         }
 
-        // 2. 安全解析类型，确保它是一个可以遍历的 List，解决 iterator() 报错
         val topValues = when (rawValues) {
             is Iterable<*> -> rawValues.filterIsInstance<Value<*>>()
             is Array<*> -> rawValues.filterIsInstance<Value<*>>()
@@ -190,7 +194,6 @@ class ClickGuiScreen : Screen(Component.literal("ClickGUI")) {
             }
         }
 
-        // 现在 topValues 是明确的 List<Value<*>>，可以正常 for 循环了
         for (v in topValues) {
             var isChildOfAny = false
             for (other in topValues) {
@@ -360,7 +363,8 @@ class ClickGuiScreen : Screen(Component.literal("ClickGUI")) {
         }
     }
 
-    override fun render(ctx: GuiGraphics, mx: Int, my: Int, dt: Float) {
+    override fun render(ctx: DrawContext, mx: Int, my: Int, dt: Float) {
+        val clientInstance = MinecraftClient.getInstance()
         anim += (1f - anim) * 0.25f
         val a = anim.coerceIn(0f, 1f)
         if (a < 0.01f) return
@@ -368,23 +372,23 @@ class ClickGuiScreen : Screen(Component.literal("ClickGUI")) {
         if (flash > 0f) flash -= dt / 3f
         else flash = 0f
 
-        val x = (minecraft!!.window.guiScaledWidth - W) / 2f
-        val y = (minecraft!!.window.guiScaledHeight - H) / 2f
-        val f = minecraft!!.font
+        val x = (clientInstance.window.scaledWidth - W) / 2f
+        val y = (clientInstance.window.scaledHeight - H) / 2f
+        val f = clientInstance.textRenderer
         val tabW = (W - 24) / cats.size
 
         val R = 8f
         fillRoundedRect(ctx, x, y, x + W, y + H, R, bg)
         
         ctx.fill(x.toInt() + R.toInt(), y.toInt(), (x + W - R).toInt(), (y + 24).toInt(), headerBg)
-        ctx.drawString(f, "§lClickGUI", x.toInt() + 10, y.toInt() + 5, accent)
+        drawString(ctx, f, "§lClickGUI", x.toInt() + 10, y.toInt() + 5, accent)
 
         val searchY = y + 28
         ctx.fill(x.toInt() + 8, searchY.toInt(), (x + W - 8).toInt(), (searchY + 15).toInt(), 0x28000000.toInt())
         val disp = if (search.isEmpty()) "§7Search modules..." else "§f$search"
-        ctx.drawString(f, trimText(f, disp, W - 30), x.toInt() + 12, searchY.toInt() + 2, -1)
+        drawString(ctx, f, trimText(f, disp, W - 30), x.toInt() + 12, searchY.toInt() + 2, -1)
         if (searchFocus) {
-            val cx = x.toInt() + 12 + f.width(search)
+            val cx = x.toInt() + 12 + f.getWidth(search)
             if (cx < x + W - 12) ctx.fill(cx, searchY.toInt() + 2, cx + 1, searchY.toInt() + 13, 0xFFFFFFFF.toInt())
         }
 
@@ -400,8 +404,8 @@ class ClickGuiScreen : Screen(Component.literal("ClickGUI")) {
                 ctx.fill(tx.toInt(), tabY.toInt(), (tx + tabW - 2).toInt(), (tabY + 20).toInt(), 0x20FFFFFF.toInt())
             }
             val tagStr = trimText(f, cats[i].tag, tabW - 4)
-            val cw = f.width(tagStr)
-            ctx.drawString(f, tagStr, tx.toInt() + ((tabW - 2) - cw) / 2, tabY.toInt() + 4, if (sel) -1 else textGray)
+            val cw = f.getWidth(tagStr)
+            drawString(ctx, f, tagStr, tx.toInt() + ((tabW - 2) - cw) / 2, tabY.toInt() + 4, if (sel) -1 else textGray)
         }
 
         val divY = tabY + 22
@@ -433,7 +437,7 @@ class ClickGuiScreen : Screen(Component.literal("ClickGUI")) {
 
             val isExpandedMod = expanded == mod
             val nameText = trimText(f, (if (isExpandedMod) "§n" else "") + mod.name, (listRight - x - 45).toInt())
-            ctx.drawString(f, nameText, x.toInt() + 14, mi + 3, if (mod.enabled) accent else textGray)
+            drawString(ctx, f, nameText, x.toInt() + 14, mi + 3, if (mod.enabled) accent else textGray)
 
             val switchW = 24
             val switchH = 12
@@ -506,15 +510,15 @@ class ClickGuiScreen : Screen(Component.literal("ClickGUI")) {
                                 val groupName = trimText(f, "$arrow §l$pureName", maxTextW - indent)
                                 
                                 ctx.fill(px.toInt() + 4 + indent, mi2, (x + W - 6).toInt(), mi2 + 16, 0x1FFFFFFF.toInt())
-                                ctx.drawString(f, groupName, px.toInt() + 8 + indent, mi2 + 4, -1)
+                                drawString(ctx, f, groupName, px.toInt() + 8 + indent, mi2 + 4, -1)
                             }
                             isColor -> {
                                 val c = extractColor(v)
                                 val text = trimText(f, "${v.name}:", maxTextW - indent)
-                                ctx.drawString(f, text, px.toInt() + 8 + indent, mi2, -1)
+                                drawString(ctx, f, text, px.toInt() + 8 + indent, mi2, -1)
 
                                 val hexStr = "#%02X%02X%02X%02X".format(c.alpha, c.red, c.green, c.blue)
-                                ctx.drawString(f, "§7$hexStr", px.toInt() + 8 + indent, mi2 + 12, -1)
+                                drawString(ctx, f, "§7$hexStr", px.toInt() + 8 + indent, mi2 + 12, -1)
 
                                 val boxX = px.toInt() + 8 + indent
                                 val boxY = mi2 + 24
@@ -558,12 +562,12 @@ class ClickGuiScreen : Screen(Component.literal("ClickGUI")) {
                             }
                             actualVal is Boolean -> {
                                 val text = trimText(f, "${v.name}: ${if (actualVal) "§aON" else "§cOFF"}", maxTextW - indent)
-                                ctx.drawString(f, text, px.toInt() + 8 + indent, mi2 + 2, -1)
+                                drawString(ctx, f, text, px.toInt() + 8 + indent, mi2 + 2, -1)
                             }
                             isBindValue(v) -> {
                                 val dispStr = formatDisplayValue(v)
                                 val text = trimText(f, "${v.name}: §e$dispStr", maxTextW - indent)
-                                ctx.drawString(f, text, px.toInt() + 8 + indent, mi2 + 2, -1)
+                                drawString(ctx, f, text, px.toInt() + 8 + indent, mi2 + 2, -1)
                             }
                             isSlider -> {
                                 var fv = 0f; var mn = 0f; var mxr = 20f
@@ -586,12 +590,12 @@ class ClickGuiScreen : Screen(Component.literal("ClickGUI")) {
 
                                 val dispVal = if (actualVal is ClosedRange<*>) "${actualVal.start} - ${actualVal.endInclusive}" else "%.1f".format(fv)
                                 val text = trimText(f, "${v.name}: $dispVal", maxTextW - indent)
-                                ctx.drawString(f, text, px.toInt() + 8 + indent, mi2, -1)
+                                drawString(ctx, f, text, px.toInt() + 8 + indent, mi2, -1)
                             }
                             else -> {
                                 val dispStr = formatDisplayValue(v)
                                 val text = trimText(f, "${v.name}: §b$dispStr", maxTextW - indent)
-                                ctx.drawString(f, text, px.toInt() + 8 + indent, mi2 + 2, -1)
+                                drawString(ctx, f, text, px.toInt() + 8 + indent, mi2 + 2, -1)
                             }
                         }
                     } catch (_: Exception) {}
@@ -603,13 +607,12 @@ class ClickGuiScreen : Screen(Component.literal("ClickGUI")) {
         }
     }
 
-    override fun renderBackground(ctx: GuiGraphics, mx: Int, my: Int, dt: Float) {}
-
     override fun mouseClicked(click: MouseButtonEvent, doubled: Boolean): Boolean {
+        val clientInstance = MinecraftClient.getInstance()
         val btn = click.button()
         val mx = click.x.toInt(); val my = click.y.toInt()
-        val x = (minecraft!!.window.guiScaledWidth - W) / 2
-        val y = (minecraft!!.window.guiScaledHeight - H) / 2
+        val x = (clientInstance.window.scaledWidth - W) / 2
+        val y = (clientInstance.window.scaledHeight - H) / 2
         val tabW = (W - 24) / cats.size
 
         if (mx in (x + 8)..(x + W - 8) && my in (y + 28)..(y + 43)) {
@@ -777,7 +780,8 @@ class ClickGuiScreen : Screen(Component.literal("ClickGUI")) {
     }
 
     override fun mouseScrolled(mx: Double, my: Double, h: Double, v: Double): Boolean {
-        val x = (minecraft!!.window.guiScaledWidth - W) / 2
+        val clientInstance = MinecraftClient.getInstance()
+        val x = (clientInstance.window.scaledWidth - W) / 2
         val panelX = x + W - panelW - 2
         if (expanded != null && mx >= panelX) {
             tOff2 = (tOff2 - v.toFloat() * 18f).coerceAtLeast(0f)
@@ -818,7 +822,7 @@ class ClickGuiScreen : Screen(Component.literal("ClickGUI")) {
         }
 
         if (input.key == GLFW.GLFW_KEY_ESCAPE) {
-            onClose()
+            close()
             return true
         }
 
@@ -881,8 +885,8 @@ class ClickGuiScreen : Screen(Component.literal("ClickGUI")) {
         return super.charTyped(characterEvent)
     }
 
-    override fun onClose() {
-        minecraft?.setScreen(null)
+    override fun close() {
+        MinecraftClient.getInstance().setScreen(null)
         anim = 0f
     }
 
