@@ -5,16 +5,10 @@ import net.ccbluex.liquidbounce.config.types.Value
 import net.ccbluex.liquidbounce.features.module.ClientModule
 import net.ccbluex.liquidbounce.features.module.ModuleCategories
 import net.ccbluex.liquidbounce.features.module.ModuleManager
-import net.minecraft.client.Minecraft
-import net.minecraft.client.gui.Font
+import net.minecraft.client.MinecraftClient
+import net.minecraft.client.font.TextRenderer
 import net.minecraft.client.gui.DrawContext
 import net.minecraft.client.gui.screen.Screen
-import net.minecraft.client.gui.ClickableWidget
-import net.minecraft.client.input.KeyInput
-import net.minecraft.client.gui.navigation.GuiNavigation
-import net.minecraft.client.gui.event.MouseButtonEvent
-import net.minecraft.client.gui.event.KeyEvent
-import net.minecraft.client.gui.event.CharacterEvent
 import net.minecraft.text.Text
 import org.lwjgl.glfw.GLFW
 import java.awt.Color
@@ -38,7 +32,7 @@ class ClickGuiScreen : Screen(Text.literal("ClickGUI")) {
     private var flash = 0f
     private var flashRow = -1
 
-    private val cats = ModuleCategories.entries.toList()
+    private val cats by lazy { ModuleCategories.entries.toList() }
     private val W = 450; private val H = 320
     private val panelW = 170
 
@@ -49,9 +43,8 @@ class ClickGuiScreen : Screen(Text.literal("ClickGUI")) {
     private val textGray = 0xFFA0A0AA.toInt()
 
     override fun shouldPause() = false
-    override fun shouldCloseOnEsc() = true
 
-    private fun drawString(context: DrawContext, font: Font, text: String, x: Int, y: Int, color: Int) {
+    private fun drawString(context: DrawContext, font: TextRenderer, text: String, x: Int, y: Int, color: Int) {
         context.drawText(font, text, x, y, color, false)
     }
 
@@ -89,7 +82,7 @@ class ClickGuiScreen : Screen(Text.literal("ClickGUI")) {
         }
     }
 
-    private fun trimText(font: Font, text: String, maxW: Int): String {
+    private fun trimText(font: TextRenderer, text: String, maxW: Int): String {
         if (font.getWidth(text) <= maxW) return text
         var str = text
         while (str.isNotEmpty() && font.getWidth("$str...") > maxW) {
@@ -123,7 +116,7 @@ class ClickGuiScreen : Screen(Text.literal("ClickGUI")) {
                 if (!res.isNullOrBlank() && res != "null") return res
             }
         } catch (_: Exception) {}
-        
+
         var fallback = v.name ?: v.javaClass.simpleName.replace("Value", "").replace("Group", "")
         if (fallback.isBlank() || fallback == "null") fallback = "Settings"
         return fallback
@@ -337,7 +330,7 @@ class ClickGuiScreen : Screen(Text.literal("ClickGUI")) {
     }
 
     override fun render(context: DrawContext, mx: Int, my: Int, dt: Float) {
-        val clientInstance = Minecraft.getInstance()
+        val clientInstance = MinecraftClient.getInstance()
         anim += (1f - anim) * 0.25f
         val a = anim.coerceIn(0f, 1f)
         if (a < 0.01f) return
@@ -348,11 +341,11 @@ class ClickGuiScreen : Screen(Text.literal("ClickGUI")) {
         val x = (window.scaledWidth - W) / 2f
         val y = (window.scaledHeight - H) / 2f
         val f = clientInstance.textRenderer
-        val tabW = (W - 24) / cats.size
+        val tabW = (W - 24) / max(1, cats.size)
 
         val R = 8f
         fillRoundedRect(context, x, y, x + W, y + H, R, bg)
-        
+
         context.fill(x.toInt() + R.toInt(), y.toInt(), (x + W - R).toInt(), (y + 24).toInt(), headerBg)
         drawString(context, f, "§lClickGUI", x.toInt() + 10, y.toInt() + 5, accent)
 
@@ -478,7 +471,7 @@ class ClickGuiScreen : Screen(Text.literal("ClickGUI")) {
                                 val arrow = if (isCollapsed) "§7[+]" else "§b[-]"
                                 val pureName = getGroupName(v)
                                 val groupName = trimText(f, "$arrow §l$pureName", maxTextW - indent)
-                                
+
                                 context.fill(px.toInt() + 4 + indent, mi2, (x + W - 6).toInt(), mi2 + 16, 0x1FFFFFFF.toInt())
                                 drawString(context, f, groupName, px.toInt() + 8 + indent, mi2 + 4, -1)
                             }
@@ -547,8 +540,8 @@ class ClickGuiScreen : Screen(Text.literal("ClickGUI")) {
                                 } else if (actualVal is Number) {
                                     fv = actualVal.toFloat()
                                     if (v is RangedValue<*>) {
-                                        mn = (v.range.start as? Number)?.toFloat() ?: 0f
-                                        mxr = (v.range.endInclusive as? Number)?.toFloat() ?: 100f
+                                        mn = (v.minimum as? Number)?.toFloat() ?: 0f
+                                        mxr = (v.maximum as? Number)?.toFloat() ?: 100f
                                     }
                                 }
 
@@ -576,14 +569,13 @@ class ClickGuiScreen : Screen(Text.literal("ClickGUI")) {
         }
     }
 
-    override fun mouseClicked(event: MouseButtonEvent, doubleClick: Boolean): Boolean {
-        val clientInstance = Minecraft.getInstance()
-        val mx = event.x.toInt(); val my = event.y.toInt()
-        val button = event.button
+    override fun mouseClicked(mouseX: Double, mouseY: Double, button: Int): Boolean {
+        val clientInstance = MinecraftClient.getInstance()
+        val mx = mouseX.toInt(); val my = mouseY.toInt()
         val window = clientInstance.window
         val x = (window.scaledWidth - W) / 2
         val y = (window.scaledHeight - H) / 2
-        val tabW = (W - 24) / cats.size
+        val tabW = (W - 24) / max(1, cats.size)
 
         if (mx in (x + 8)..(x + W - 8) && my in (y + 28)..(y + 43)) {
             searchFocus = true
@@ -713,8 +705,8 @@ class ClickGuiScreen : Screen(Text.literal("ClickGUI")) {
                                         if (actualVal is ClosedRange<*>) {
                                             mn = 1f; mxr = 30f
                                         } else if (v is RangedValue<*>) {
-                                            mn = (v.range.start as? Number)?.toFloat() ?: 0f
-                                            mxr = (v.range.endInclusive as? Number)?.toFloat() ?: 100f
+                                            mn = (v.minimum as? Number)?.toFloat() ?: 0f
+                                            mxr = (v.maximum as? Number)?.toFloat() ?: 100f
                                         }
 
                                         val bw = panelW - 16 - indent; val bx = px + 8 + indent
@@ -746,24 +738,23 @@ class ClickGuiScreen : Screen(Text.literal("ClickGUI")) {
             }
         }
 
-        return super.mouseClicked(event, doubleClick)
+        return super.mouseClicked(mouseX, mouseY, button)
     }
 
-    override fun mouseScrolled(x: Double, y: Double, scrollX: Double, scrollY: Double): Boolean {
-        val clientInstance = Minecraft.getInstance()
+    override fun mouseScrolled(mouseX: Double, mouseY: Double, horizontalAmount: Double, verticalAmount: Double): Boolean {
+        val clientInstance = MinecraftClient.getInstance()
         val window = clientInstance.window
         val xPos = (window.scaledWidth - W) / 2
         val panelX = xPos + W - panelW - 2
-        if (expanded != null && x >= panelX) {
-            tOff2 = (tOff2 - scrollY.toFloat() * 18f).coerceAtLeast(0f)
+        if (expanded != null && mouseX >= panelX) {
+            tOff2 = (tOff2 - verticalAmount.toFloat() * 18f).coerceAtLeast(0f)
         } else {
-            tOff = (tOff - scrollY.toFloat() * 18f).coerceAtLeast(0f)
+            tOff = (tOff - verticalAmount.toFloat() * 18f).coerceAtLeast(0f)
         }
         return true
     }
 
-    override fun keyPressed(event: KeyEvent): Boolean {
-        val keyCode = event.key
+    override fun keyPressed(keyCode: Int, scanCode: Int, modifiers: Int): Boolean {
         val lv = listeningValue
         if (lv != null) {
             val targetKeyName = if (keyCode == GLFW.GLFW_KEY_ESCAPE || keyCode == GLFW.GLFW_KEY_DELETE) "NONE" else GLFW.glfwGetKeyName(keyCode, 0)?.uppercase() ?: "KEY_$keyCode"
@@ -774,7 +765,7 @@ class ClickGuiScreen : Screen(Text.literal("ClickGUI")) {
                     val cls = actual.javaClass
                     val fields = cls.declaredFields
                     val keyField = fields.find { it.name.contains("key", true) || it.name.contains("bound", true) }
-                    
+
                     if (keyField != null) {
                         keyField.isAccessible = true
                         keyField.set(actual, keyCode)
@@ -808,7 +799,7 @@ class ClickGuiScreen : Screen(Text.literal("ClickGUI")) {
                     return true
                 }
                 else -> {
-                    val n = GLFW.glfwGetKeyName(keyCode, 0)
+                    val n = GLFW.glfwGetKeyName(keyCode, scanCode)
                     if (n != null && n.length == 1) {
                         search += n
                         return true
@@ -816,22 +807,21 @@ class ClickGuiScreen : Screen(Text.literal("ClickGUI")) {
                 }
             }
         }
-        return super.keyPressed(event)
+        return super.keyPressed(keyCode, scanCode, modifiers)
     }
 
-    override fun charTyped(event: CharacterEvent): Boolean {
-        val codePoint = event.codepoint
+    override fun charTyped(chr: Char, modifiers: Int): Boolean {
         if (searchFocus) {
-            if (codePoint > 31) {
-                search += codePoint.toChar()
+            if (chr.code > 31) {
+                search += chr
                 return true
             }
         }
-        return super.charTyped(event)
+        return super.charTyped(chr, modifiers)
     }
 
     override fun close() {
-        Minecraft.getInstance().setScreen(null)
+        client?.setScreen(null)
         anim = 0f
     }
 
