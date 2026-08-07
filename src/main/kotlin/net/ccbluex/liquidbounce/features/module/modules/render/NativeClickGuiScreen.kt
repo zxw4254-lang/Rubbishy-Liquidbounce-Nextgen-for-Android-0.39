@@ -13,6 +13,7 @@ import org.lwjgl.glfw.GLFW
 import java.awt.Color
 import kotlin.math.cos
 import kotlin.math.max
+import kotlin.math.min
 import kotlin.math.sin
 
 class ClickGuiScreen : Screen(Text.literal("ClickGUI")) {
@@ -46,10 +47,13 @@ class ClickGuiScreen : Screen(Text.literal("ClickGUI")) {
 
     private fun fillRoundedRect(ctx: DrawContext, x1: Float, y1: Float, x2: Float, y2: Float, radius: Float, color: Int) {
         val r = radius.coerceAtMost((x2 - x1) / 2f).coerceAtMost((y2 - y1) / 2f)
+        
+        // Inner rectangular body
         ctx.fill((x1 + r).toInt(), y1.toInt(), (x2 - r).toInt(), y2.toInt(), color)
         ctx.fill(x1.toInt(), (y1 + r).toInt(), (x1 + r).toInt(), (y2 - r).toInt(), color)
         ctx.fill((x2 - r).toInt(), (y1 + r).toInt(), x2.toInt(), (y2 - r).toInt(), color)
 
+        // Smoothly rasterized quadrant corners
         val corners = arrayOf(
             floatArrayOf(x1 + r, y1 + r, 180f, 270f),
             floatArrayOf(x2 - r, y1 + r, 270f, 360f),
@@ -59,32 +63,32 @@ class ClickGuiScreen : Screen(Text.literal("ClickGUI")) {
 
         for (c in corners) {
             val cx = c[0]; val cy = c[1]
-            val startAng = c[2]; val endAng = c[3]
-            var a = startAng
+            var a = c[2]
+            val endAng = c[3]
             while (a < endAng) {
-                val rad1 = Math.toRadians(a.toDouble())
-                val rad2 = Math.toRadians((a + 10).coerceAtMost(endAng).toDouble())
-                val px1 = cx + (cos(rad1) * r).toFloat()
-                val py1 = cy + (sin(rad1) * r).toFloat()
-                val px2 = cx + (cos(rad2) * r).toFloat()
-                val py2 = cy + (sin(rad2) * r).toFloat()
-                val minX = cx.coerceAtMost(px1).coerceAtMost(px2).toInt()
-                val maxX = cx.coerceAtLeast(px1).coerceAtLeast(px2).toInt()
-                val minY = cy.coerceAtMost(py1).coerceAtMost(py2).toInt()
-                val maxY = cy.coerceAtLeast(py1).coerceAtLeast(py2).toInt()
+                val rad = Math.toRadians(a.toDouble())
+                val px = cx + (cos(rad) * r).toFloat()
+                val py = cy + (sin(rad) * r).toFloat()
+                
+                val minX = min(cx, px).toInt()
+                val maxX = max(cx, px).toInt()
+                val minY = min(cy, py).toInt()
+                val maxY = max(cy, py).toInt()
+                
                 ctx.fill(minX, minY, max(minX + 1, maxX), max(minY + 1, maxY), color)
-                a += 10f
+                a += 5f
             }
         }
     }
 
     private fun trimText(font: TextRenderer, text: String, maxW: Int): String {
+        if (maxW <= 0) return ""
         if (font.getWidth(text) <= maxW) return text
         var str = text
         while (str.isNotEmpty() && font.getWidth("$str...") > maxW) {
             str = str.substring(0, str.length - 1)
         }
-        return "$str..."
+        return if (str.isEmpty()) "" else "$str..."
     }
 
     private fun isGroupValue(v: Value<*>): Boolean {
@@ -97,11 +101,13 @@ class ClickGuiScreen : Screen(Text.literal("ClickGUI")) {
         try {
             val nameProp = v.javaClass.methods.find { it.name == "getName" && it.parameterCount == 0 }
             if (nameProp != null) {
+                nameProp.isAccessible = true
                 val res = nameProp.invoke(v) as? String
                 if (!res.isNullOrBlank() && res != "null") return res
             }
             val fieldProp = v.javaClass.fields.find { it.name.equals("name", true) }
             if (fieldProp != null) {
+                fieldProp.isAccessible = true
                 val res = fieldProp.get(v) as? String
                 if (!res.isNullOrBlank() && res != "null") return res
             }
@@ -123,6 +129,7 @@ class ClickGuiScreen : Screen(Text.literal("ClickGUI")) {
         try {
             for (m in v.javaClass.methods) {
                 if ((m.name.equals("getValues", true) || m.name.equals("getSubValues", true)) && m.parameterCount == 0) {
+                    m.isAccessible = true
                     val res = m.invoke(v)
                     if (res is Collection<*>) list.addAll(res.filterIsInstance<Value<*>>())
                     if (res != null && res.javaClass.isArray) list.addAll((res as Array<*>).filterIsInstance<Value<*>>())
@@ -276,6 +283,7 @@ class ClickGuiScreen : Screen(Text.literal("ClickGUI")) {
             val cls = valObj.javaClass
             val rgbMethod = cls.methods.find { it.name == "getRGB" || it.name == "rgb" }
             if (rgbMethod != null) {
+                rgbMethod.isAccessible = true
                 val rgb = (rgbMethod.invoke(valObj) as Number).toInt()
                 return Color(rgb, true)
             }
@@ -286,12 +294,24 @@ class ClickGuiScreen : Screen(Text.literal("ClickGUI")) {
     private fun updateColorValue(v: Value<*>, color: Color) {
         val actual = getActualValue(v)
         try {
-            if (actual is Color) {
-                @Suppress("UNCHECKED_CAST")
-                (v as Value<Color>).set(color)
-            } else {
-                @Suppress("UNCHECKED_CAST")
-                (v as Value<Int>).set(color.rgb)
+            val setMethod = v.javaClass.methods.find { it.name == "set" && it.parameterCount == 1 }
+            if (setMethod != null) {
+                setMethod.isAccessible = true
+                val paramType = setMethod.parameterTypes[0]
+                when {
+                    paramType.isAssignableFrom(Color::class.java) -> setMethod.invoke(v, color)
+                    paramType == Int::class.javaPrimitiveType || paramType == Int::class.javaObjectType -> setMethod.invoke(v, color.rgb)
+                    else -> {
+                        if (actual != null) {
+                            val cCls = actual.javaClass
+                            val setRgbMethod = cCls.methods.find { it.name == "setRGB" || it.name == "set" }
+                            if (setRgbMethod != null) {
+                                setRgbMethod.isAccessible = true
+                                setRgbMethod.invoke(actual, color.rgb)
+                            }
+                        }
+                    }
+                }
             }
         } catch (_: Exception) {}
     }
@@ -301,6 +321,7 @@ class ClickGuiScreen : Screen(Text.literal("ClickGUI")) {
         try {
             val nextMethod = cls.methods.find { (it.name == "next" || it.name == "toggle" || it.name == "setNext") && it.parameterCount == 0 }
             if (nextMethod != null) {
+                nextMethod.isAccessible = true
                 nextMethod.invoke(v)
                 return
             }
@@ -312,8 +333,9 @@ class ClickGuiScreen : Screen(Text.literal("ClickGUI")) {
                 val nextIdx = (actual.ordinal + 1) % constants.size
                 val nextVal: Any = constants[nextIdx]
                 try {
-                    @Suppress("UNCHECKED_CAST")
-                    (v as Value<Any>).set(nextVal)
+                    val setMethod = cls.methods.find { it.name == "set" && it.parameterCount == 1 }
+                    setMethod?.isAccessible = true
+                    setMethod?.invoke(v, nextVal)
                 } catch (_: Exception) {}
                 return
             }
@@ -323,33 +345,31 @@ class ClickGuiScreen : Screen(Text.literal("ClickGUI")) {
             if (choicesField != null) {
                 choicesField.isAccessible = true
                 val choices = choicesField.get(v)
+                val setMethod = cls.methods.find { it.name == "set" && it.parameterCount == 1 }
+                setMethod?.isAccessible = true
+
                 if (choices is Array<*> && choices.isNotEmpty()) {
                     val currentVal = v.get()
                     val idx = choices.indexOf(currentVal)
                     val nextIdx = if (idx >= 0) (idx + 1) % choices.size else 0
                     val nextVal = choices[nextIdx]
-                    if (nextVal != null) {
-                        @Suppress("UNCHECKED_CAST")
-                        (v as Value<Any>).set(nextVal)
-                    }
+                    if (nextVal != null) setMethod?.invoke(v, nextVal)
                     return
                 } else if (choices is List<*> && choices.isNotEmpty()) {
                     val currentVal = v.get()
                     val idx = choices.indexOf(currentVal)
                     val nextIdx = if (idx >= 0) (idx + 1) % choices.size else 0
                     val nextVal = choices[nextIdx]
-                    if (nextVal != null) {
-                        @Suppress("UNCHECKED_CAST")
-                        (v as Value<Any>).set(nextVal)
-                    }
+                    if (nextVal != null) setMethod?.invoke(v, nextVal)
                     return
                 }
             }
         } catch (_: Exception) {}
         if (actual is Boolean) {
             try {
-                @Suppress("UNCHECKED_CAST")
-                (v as Value<Boolean>).set(!actual)
+                val setMethod = cls.methods.find { it.name == "set" && it.parameterCount == 1 }
+                setMethod?.isAccessible = true
+                setMethod?.invoke(v, !actual)
             } catch (_: Exception) {}
         }
     }
@@ -678,7 +698,7 @@ class ClickGuiScreen : Screen(Text.literal("ClickGUI")) {
 
                     val indent = depth * 6
 
-                    if (my >= curY && my < curY + itemH) {
+                    if (my in py.toInt()..(py + setH).toInt() && my >= curY && my < curY + itemH) {
                         try {
                             if (isGroup) {
                                 if (btn == 0 || btn == 1) {
@@ -728,8 +748,9 @@ class ClickGuiScreen : Screen(Text.literal("ClickGUI")) {
                                         listeningValue = if (listeningValue == v) null else v
                                     }
                                     actualVal is Boolean -> {
-                                        @Suppress("UNCHECKED_CAST")
-                                        (v as Value<Boolean>).set(!actualVal)
+                                        val setMethod = v.javaClass.methods.find { it.name == "set" && it.parameterCount == 1 }
+                                        setMethod?.isAccessible = true
+                                        setMethod?.invoke(v, !actualVal)
                                     }
                                     isSlider -> {
                                         var mn = 0f; var mxr = 20f
@@ -744,16 +765,16 @@ class ClickGuiScreen : Screen(Text.literal("ClickGUI")) {
                                         val nr = ((mx - bx).toFloat() / bw).coerceIn(0f, 1f)
                                         val nv = mn + nr * (mxr - mn)
 
+                                        val setMethod = v.javaClass.methods.find { it.name == "set" && it.parameterCount == 1 }
+                                        setMethod?.isAccessible = true
+
                                         if (actualVal is IntRange) {
                                             val center = nv.toInt()
-                                            @Suppress("UNCHECKED_CAST")
-                                            (v as Value<IntRange>).set((center - 1).coerceAtLeast(1)..center)
+                                            setMethod?.invoke(v, (center - 1).coerceAtLeast(1)..center)
                                         } else if (actualVal is Float) {
-                                            @Suppress("UNCHECKED_CAST")
-                                            (v as Value<Float>).set(nv)
+                                            setMethod?.invoke(v, nv)
                                         } else if (actualVal is Int) {
-                                            @Suppress("UNCHECKED_CAST")
-                                            (v as Value<Int>).set(nv.toInt())
+                                            setMethod?.invoke(v, nv.toInt())
                                         }
                                     }
                                     else -> {
@@ -800,12 +821,14 @@ class ClickGuiScreen : Screen(Text.literal("ClickGUI")) {
                     if (keyField != null) {
                         keyField.isAccessible = true
                         keyField.set(actual, key)
-                    } else if (actual is Int) {
-                        @Suppress("UNCHECKED_CAST")
-                        (lv as Value<Int>).set(key)
-                    } else if (actual is String) {
-                        @Suppress("UNCHECKED_CAST")
-                        (lv as Value<String>).set(targetKeyName)
+                    } else {
+                        val setMethod = lv.javaClass.methods.find { it.name == "set" && it.parameterCount == 1 }
+                        setMethod?.isAccessible = true
+                        if (actual is Int) {
+                            setMethod?.invoke(lv, key)
+                        } else if (actual is String) {
+                            setMethod?.invoke(lv, targetKeyName)
+                        }
                     }
                 }
             } catch (_: Exception) {}
@@ -820,22 +843,9 @@ class ClickGuiScreen : Screen(Text.literal("ClickGUI")) {
         }
 
         if (searchFocus) {
-            when (keyCode) {
-                GLFW.GLFW_KEY_BACKSPACE -> {
-                    if (search.isNotEmpty()) search = search.dropLast(1)
-                    return true
-                }
-                GLFW.GLFW_KEY_SPACE -> {
-                    search += " "
-                    return true
-                }
-                else -> {
-                    val n = GLFW.glfwGetKeyName(keyCode, 0)
-                    if (n != null && n.length == 1) {
-                        search += n
-                        return true
-                    }
-                }
+            if (keyCode == GLFW.GLFW_KEY_BACKSPACE) {
+                if (search.isNotEmpty()) search = search.dropLast(1)
+                return true
             }
         }
         return super.keyPressed(keyCode, scanCode, modifiers)
@@ -843,8 +853,8 @@ class ClickGuiScreen : Screen(Text.literal("ClickGUI")) {
 
     override fun charTyped(chr: Char, modifiers: Int): Boolean {
         if (searchFocus) {
-            if (chr.code > 31) {
-                search += chr.toString()
+            if (chr.code > 31 && chr.code != 127) {
+                search += chr
                 return true
             }
         }
