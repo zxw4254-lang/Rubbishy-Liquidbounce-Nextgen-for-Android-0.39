@@ -12,7 +12,6 @@
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
  * GNU General Public License for more details.
- *
  * You should have received a copy of the GNU General Public License
  * along with LiquidBounce. If not, see <https://www.gnu.org/licenses/>.
  */
@@ -40,6 +39,7 @@ import net.ccbluex.liquidbounce.integration.screen.impl.CustomStandaloneMinecraf
 import net.ccbluex.liquidbounce.utils.client.inGame
 import net.ccbluex.liquidbounce.utils.kotlin.EventPriorityConvention.OBJECTION_AGAINST_EVERYTHING
 import net.ccbluex.liquidbounce.utils.kotlin.EventPriorityConvention.READ_FINAL_STATE
+import net.ccbluex.liquidbounce.event.events.KeyboardKeyEvent
 import org.lwjgl.glfw.GLFW
 
 /**
@@ -104,6 +104,13 @@ object ModuleClickGui :
     @Suppress("unused")
     private val browserReadyHandler = handler<BrowserReadyEvent>(priority = READ_FINAL_STATE) {
         tree(ScreenManager.browserSettings)
+    }
+
+    // Added key handler from 0.37 to allow opening ClickGUI with Right Shift
+    private val keyHandler = handler<KeyboardKeyEvent> { event ->
+        if (event.action == 1 && (event.keyCode == GLFW.GLFW_KEY_RIGHT_SHIFT || event.keyCode == 54) && mc.gui.screen() == null) {
+            mc.gui.setScreen(CustomSharedMinecraftScreen(CustomScreenType.CLICK_GUI))
+        }
     }
 
     override fun onEnabled() {
@@ -186,5 +193,4 @@ object ModuleClickGui :
             mc.gui.setScreen(this.standaloneScreen ?: CustomSharedMinecraftScreen(CustomScreenType.CLICK_GUI))
         }
     }
-
-}
+    }
