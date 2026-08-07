@@ -1,27 +1,26 @@
 package net.ccbluex.liquidbounce.features.module.modules.render
 
-// 移除了对 CustomScreen 的依赖，直接使用 Minecraft 原生 Screen
+// Removed CustomScreen imports – using Minecraft's Screen directly
+import net.ccbluex.liquidbounce.integration.screen.ScreenManager
 import net.ccbluex.liquidbounce.utils.client.mc
-import net.minecraft.client.gui.GuiGraphics
-import net.minecraft.client.gui.screens.Screen
-import net.minecraft.network.chat.Component
+import org.lwjgl.glfw.GLFW
 import org.lwjgl.opengl.GL11
+import com.mojang.blaze3d.vertex.PoseStack
 import java.util.*
 
 /**
  * Kotlin 移植版的 **Native ClickGUI**
  *
- * 该文件把工作区中 `com.opal.clickgui.model` 包下的 Java 数据模型全部迁移为 Kotlin
+ * 这份文件把工作区中 `com.opal.clickgui.model` 包下的 Java 数据模型全部迁移为 Kotlin
  * data class / sealed class，实现同等的属性与动画字段。
  *
- * 同时提供一个最简版的 `NativeClickGuiScreen`，它继承自 Minecraft 原生
- * `Screen`（而不是已 `final` 的 `CustomScreen`），在 `render()` 中通过
- * OpenGL (LWJGL) 绘制 **分类、模块、属性**，并保留了原 Java 版的配色、尺寸、
- * 动画进度字段，以便后续在 UI 中实现完整的交互效果。
+ * 同时提供一个非常简化的 `NativeClickGuiScreen`，它继承自 Minecraft 原生 `Screen`
+ *（而不是已 `final` 的 `CustomScreen`），在 `render()` 中通过 OpenGL (LWJGL) 绘制
+ * **分类、模块、属性**，并保留了原 Java 版的配色、尺寸、动画进度字段，以便后续在 UI 中实现完整的交互效果。
  *
  * `ModuleClickGui` 已经在 `ModuleClickGui.kt` 中把 `NativeClickGuiScreen`
- * 作为 Android‑only 的打开界面。现在该类同样在桌面端可用，实现了
- * “ModuleClickGui 为 NativeClickGui 的接口” 的需求。
+ * 作为 Android‑only 的打开界面。这里我们提供同名的 Kotlin 实现，使其在
+ * 桌面端也可以工作，实现了 **ModuleClickGui 为 NativeClickGui 的接口** 的需求。
  */
 
 /* ---------- 数据模型 ---------- */
@@ -224,7 +223,7 @@ class NativeClickGuiScreen : Screen(Component.literal("Native ClickGUI")) {
 
     /** 根据当前窗口宽度计算 UI 缩放比例 S */
     private fun initScale() {
-        // 这里使用 Minecraft Window 的公开 `width`（而非私有 `framebufferWidth`）
+        // 使用公开的窗口宽度（framebufferWidth）
         val windowWidth = mc.window?.width?.toFloat() ?: 800f
         var scale = windowWidth / BASE_DESIGN_WIDTH
         if (scale < MIN_SCALE) scale = MIN_SCALE
@@ -232,8 +231,8 @@ class NativeClickGuiScreen : Screen(Component.literal("Native ClickGUI")) {
         S = scale
     }
 
-    /** 主渲染入口，符合 `Screen.render(GuiGraphics, int, int, float)` */
-    override fun render(guiGraphics: GuiGraphics, mouseX: Int, mouseY: Int, tickDelta: Float) {
+    /** 主渲染入口，符合 `Screen.render(PoseStack, int, int, float)` */
+    override fun render(poseStack: PoseStack, mouseX: Int, mouseY: Int, tickDelta: Float) {
         // 1️⃣ 背景（半透明黑）
         GL11.glClearColor(0f, 0f, 0f, 0.85f)
         GL11.glClear(GL11.GL_COLOR_BUFFER_BIT)
@@ -244,7 +243,7 @@ class NativeClickGuiScreen : Screen(Component.literal("Native ClickGUI")) {
         // 3️⃣ 渲染每个分类卡片
         var offsetX = 0f
         for (cat in categories) {
-            renderCategory(guiGraphics, cat, offsetX, 0f)
+            renderCategory(poseStack, cat, offsetX, 0f)
             offsetX += cat.layoutWidth + catGap()
         }
     }
@@ -268,27 +267,27 @@ class NativeClickGuiScreen : Screen(Component.literal("Native ClickGUI")) {
     }
 
     /** 渲染单个分类卡片 */
-    private fun renderCategory(guiGraphics: GuiGraphics, cat: Category, x: Float, y: Float) {
+    private fun renderCategory(poseStack: PoseStack, cat: Category, x: Float, y: Float) {
         // 背景
         drawRoundedRect(x, y, cat.layoutWidth, cat.layoutHeight, catRadius(), CAT_BG)
         // 标题栏
         drawRoundedRect(x, y, cat.layoutWidth, catHeaderHeight(), catRadius(), CAT_BG_COLOR)
-        // TODO: 绘制文字 (cat.name、cat.icon) – 可使用 guiGraphics.drawString 等
+        // TODO: 绘制文字 (cat.name、cat.icon) – 可使用 poseStack 与字体渲染工具
 
-        // 渲染模块列表
+        // 绘制模块列表
         for (mod in cat.modules) {
-            renderModule(guiGraphics, mod, x, y + mod.layoutY)
+            renderModule(poseStack, mod, x, y + mod.layoutY)
         }
     }
 
     /** 渲染单个模块行以及（可选的）属性面板 */
-    private fun renderModule(guiGraphics: GuiGraphics, mod: Module, baseX: Float, baseY: Float) {
+    private fun renderModule(poseStack: PoseStack, mod: Module, baseX: Float, baseY: Float) {
         // 背景（悬停时可改为 hover 颜色，这里使用普通颜色）
         val bgColor = if (mod.expanded) MOD_BG_HOVER else MOD_BG
         drawRoundedRect(baseX, baseY, catWidth(), moduleHeight(), 4f * S, bgColor)
 
         // TODO: 绘制模块名称文字
-        // guiGraphics.drawString(mc.font, mod.name, (baseX + 6f * S).toInt(), (baseY + 14f * S).toInt(), 0xFFFFFFFF.toInt())
+        // 例如：mc.font.draw(poseStack, mod.name, (baseX + 6f * S).toInt(), (baseY + 14f * S).toInt(), 0xFFFFFFFF.toInt())
 
         // 开关指示圆点（动画进度可映射到半径或颜色）
         val toggleRadius = 5f * S
@@ -301,18 +300,18 @@ class NativeClickGuiScreen : Screen(Component.literal("Native ClickGUI")) {
         if (mod.expanded && mod.props.isNotEmpty()) {
             var propY = baseY + moduleHeight()
             for (prop in mod.props) {
-                renderProperty(guiGraphics, prop, baseX, propY)
+                renderProperty(prop, baseX, propY)
                 propY += propertyHeight()
             }
         }
     }
 
     /** 渲染单个属性（这里只绘制背景占位，具体 UI 可自行实现） */
-    private fun renderProperty(guiGraphics: GuiGraphics, prop: Property, x: Float, y: Float) {
+    private fun renderProperty(prop: Property, x: Float, y: Float) {
         drawRoundedRect(x, y, catWidth(), propertyHeight(), 3f * S, PROPS_BG)
         // TODO: 根据属性类型绘制对应 UI（布尔开关、滑块、下拉框、主题网格等）
         // 示例文字占位:
-        // guiGraphics.drawString(mc.font, prop.label, (x + 6f * S).toInt(), (y + 12f * S).toInt(), 0xFFFFFFFF.toInt())
+        // mc.font.draw(poseStack, prop.label, (x + 6f * S).toInt(), (y + 12f * S).toInt(), 0xFFFFFFFF.toInt())
     }
 
     // ------------------- 辅助绘图函数（占位） -------------------
@@ -345,13 +344,13 @@ class NativeClickGuiScreen : Screen(Component.literal("Native ClickGUI")) {
  * 1. 完全迁移了原 Android 项目中的数据模型（Category、Module、Property、Theme）。
  * 2. 采用 Kotlin `sealed class` 替代 Java 中的 `type` 整数，使代码更安全、易维护。
  * 3. 使用官方的 `Screen` 基类，避免了 `CustomScreen` 被标记为 `final` 的兼容问题。
- * 4. `render` 方法已改为符合 `Screen` 接口的签名，并传递 `GuiGraphics` 给子渲染函数。
+ * 4. `render` 方法已改为符合 `Screen` 接口的签名，并传递 `PoseStack` 给子渲染函数。
  * 5. 通过 `mc.window?.width` 读取窗口宽度，避免访问 `framebufferWidth`（私有属性）。
  * 6. `ModuleClickGui` 中的 `onEnabled()` 与右 Shift 键回调仍然调用
  *    `mc.gui.setScreen(NativeClickGuiScreen())`，现在该调用会打开本实现，实现了
  *    “ModuleClickGui 为 NativeClickGui 接口”的需求。
  *
  * 后续如果需要完整的交互（点击、滑块拖拽、搜索栏、动态岛等），只需在
- * `drawRoundedRect`、`drawCircle`、`renderProperty` 里加入实际的 OpenGL/Shader
- * 实现或直接使用 LiquidBounce/Minecraft 已提供的绘制工具即可。
+ * `drawRoundedRect`、`drawCircle`、`renderProperty` 等占位函数里加入实际的
+ * OpenGL/Shader 实现或直接使用 LiquidBounce/Minecraft 已提供的绘制工具即可。
  */
