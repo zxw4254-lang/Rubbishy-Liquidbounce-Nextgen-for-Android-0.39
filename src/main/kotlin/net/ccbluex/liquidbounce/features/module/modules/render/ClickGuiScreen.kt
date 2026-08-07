@@ -3,11 +3,14 @@ package net.ccbluex.liquidbounce.features.module.modules.render
 import net.ccbluex.liquidbounce.config.types.RangedValue
 import net.ccbluex.liquidbounce.config.types.Value
 import net.ccbluex.liquidbounce.features.module.ClientModule
-import net.ccbluex.liquidbounce.features.module.ModuleCategory
+import net.ccbluex.liquidbounce.features.module.ModuleCategories
 import net.ccbluex.liquidbounce.features.module.ModuleManager
 import net.minecraft.client.gui.Font
 import net.minecraft.client.gui.GuiGraphics
 import net.minecraft.client.gui.screens.Screen
+import net.minecraft.client.input.CharacterEvent
+import net.minecraft.client.input.KeyEvent
+import net.minecraft.client.input.MouseButtonEvent
 import net.minecraft.network.chat.Component
 import org.lwjgl.glfw.GLFW
 import java.awt.Color
@@ -31,8 +34,13 @@ class ClickGuiScreen : Screen(Component.literal("ClickGUI")) {
     private var flash = 0f
     private var flashRow = -1
 
-    // 兼容 0.39 的分类枚举
-    private val cats = ModuleCategory.entries.toList()
+    // 兼容 ModuleCategories / ModuleCategory 的枚举获取
+    private val cats: List<Enum<*>> = try {
+        ModuleCategories::class.java.enumConstants.toList()
+    } catch (_: Exception) {
+        emptyList()
+    }
+
     private val W = 450; private val H = 320
     private val panelW = 170
 
@@ -44,6 +52,17 @@ class ClickGuiScreen : Screen(Component.literal("ClickGUI")) {
 
     override fun isPauseScreen() = false
     override fun shouldCloseOnEsc() = true
+
+    // 绘制字符串兼容层
+    private fun drawText(ctx: GuiGraphics, font: Font, text: String, x: Int, y: Int, color: Int) {
+        try {
+            ctx.drawString(font, text, x, y, color, false)
+        } catch (_: Exception) {
+            try {
+                ctx.drawString(font, text, x, y, color)
+            } catch (_: Exception) {}
+        }
+    }
 
     private fun fillRoundedRect(ctx: GuiGraphics, x1: Float, y1: Float, x2: Float, y2: Float, radius: Float, color: Int) {
         val r = radius.coerceAtMost((x2 - x1) / 2f).coerceAtMost((y2 - y1) / 2f)
@@ -86,6 +105,18 @@ class ClickGuiScreen : Screen(Component.literal("ClickGUI")) {
             str = str.substring(0, str.length - 1)
         }
         return "$str..."
+    }
+
+    private fun getCategoryTag(catEnum: Enum<*>): String {
+        try {
+            val f = catEnum.javaClass.declaredFields.find { it.name.equals("tag", true) || it.name.equals("displayName", true) }
+            if (f != null) {
+                f.isAccessible = true
+                val v = f.get(catEnum) as? String
+                if (!v.isNullOrBlank()) return v
+            }
+        } catch (_: Exception) {}
+        return catEnum.name
     }
 
     private fun isGroupValue(v: Value<*>): Boolean {
@@ -165,7 +196,7 @@ class ClickGuiScreen : Screen(Component.literal("ClickGUI")) {
             }
         }
 
-        val topValues = when (rawValues) {
+        val topValues: List<Value<*>> = when (rawValues) {
             is Iterable<*> -> rawValues.filterIsInstance<Value<*>>()
             is Array<*> -> rawValues.filterIsInstance<Value<*>>()
             else -> emptyList()
@@ -366,18 +397,19 @@ class ClickGuiScreen : Screen(Component.literal("ClickGUI")) {
         val x = (minecraft!!.window.guiScaledWidth - W) / 2f
         val y = (minecraft!!.window.guiScaledHeight - H) / 2f
         val f = minecraft!!.font
-        val tabW = (W - 24) / cats.size
+        val safeCatSize = max(1, cats.size)
+        val tabW = (W - 24) / safeCatSize
 
         val R = 8f
         fillRoundedRect(ctx, x, y, x + W, y + H, R, bg)
         
         ctx.fill(x.toInt() + R.toInt(), y.toInt(), (x + W - R).toInt(), (y + 24).toInt(), headerBg)
-        ctx.drawString(f, "§lClickGUI", x.toInt() + 10, y.toInt() + 5, accent)
+        drawText(ctx, f, "§lClickGUI", x.toInt() + 10, y.toInt() + 5, accent)
 
         val searchY = y + 28
         ctx.fill(x.toInt() + 8, searchY.toInt(), (x + W - 8).toInt(), (searchY + 15).toInt(), 0x28000000.toInt())
         val disp = if (search.isEmpty()) "§7Search modules..." else "§f$search"
-        ctx.drawString(f, trimText(f, disp, W - 30), x.toInt() + 12, searchY.toInt() + 2, -1)
+        drawText(ctx, f, trimText(f, disp, W - 30), x.toInt() + 12, searchY.toInt() + 2, -1)
         if (searchFocus) {
             val cx = x.toInt() + 12 + f.width(search)
             if (cx < x + W - 12) ctx.fill(cx, searchY.toInt() + 2, cx + 1, searchY.toInt() + 13, 0xFFFFFFFF.toInt())
@@ -394,9 +426,9 @@ class ClickGuiScreen : Screen(Component.literal("ClickGUI")) {
             } else if (mx in tx.toInt()..(tx + tabW - 2).toInt() && my in tabY.toInt()..(tabY + 20).toInt()) {
                 ctx.fill(tx.toInt(), tabY.toInt(), (tx + tabW - 2).toInt(), (tabY + 20).toInt(), 0x20FFFFFF.toInt())
             }
-            val tagStr = trimText(f, cats[i].tag, tabW - 4)
+            val tagStr = trimText(f, getCategoryTag(cats[i]), tabW - 4)
             val cw = f.width(tagStr)
-            ctx.drawString(f, tagStr, tx.toInt() + ((tabW - 2) - cw) / 2, tabY.toInt() + 4, if (sel) -1 else textGray)
+            drawText(ctx, f, tagStr, tx.toInt() + ((tabW - 2) - cw) / 2, tabY.toInt() + 4, if (sel) -1 else textGray)
         }
 
         val divY = tabY + 22
@@ -411,7 +443,7 @@ class ClickGuiScreen : Screen(Component.literal("ClickGUI")) {
         tOff = max(0f, tOff.coerceAtMost(max(0f, mods.size * rowH - listH)))
         sOff += (tOff - sOff) * 0.3f * a
 
-        ctx.enableScissor(x.toInt(), listY.toInt(), listRight.toInt(), (listY + listH).toInt())
+        try { ctx.enableScissor(x.toInt(), listY.toInt(), listRight.toInt(), (listY + listH).toInt()) } catch (_: Exception) {}
 
         for (i in mods.indices) {
             val mod = mods[i]
@@ -428,7 +460,7 @@ class ClickGuiScreen : Screen(Component.literal("ClickGUI")) {
 
             val isExpandedMod = expanded == mod
             val nameText = trimText(f, (if (isExpandedMod) "§n" else "") + mod.name, (listRight - x - 45).toInt())
-            ctx.drawString(f, nameText, x.toInt() + 14, mi + 3, if (mod.enabled) accent else textGray)
+            drawText(ctx, f, nameText, x.toInt() + 14, mi + 3, if (mod.enabled) accent else textGray)
 
             val switchW = 24
             val switchH = 12
@@ -443,7 +475,7 @@ class ClickGuiScreen : Screen(Component.literal("ClickGUI")) {
                 ctx.fill(btnX + 2, btnY + 2, btnX + 10, btnY + switchH - 2, 0xAA808080.toInt())
             }
         }
-        ctx.disableScissor()
+        try { ctx.disableScissor() } catch (_: Exception) {}
 
         val curExp = expanded
         if (curExp != null) {
@@ -472,7 +504,7 @@ class ClickGuiScreen : Screen(Component.literal("ClickGUI")) {
             tOff2 = max(0f, tOff2.coerceAtMost(max(0f, totalContentH - setH)))
             sOff2 += (tOff2 - sOff2) * 0.3f
 
-            ctx.enableScissor(px.toInt(), (py + 4).toInt(), (x + W - 2).toInt(), (y + H - 6).toInt())
+            try { ctx.enableScissor(px.toInt(), (py + 4).toInt(), (x + W - 2).toInt(), (y + H - 6).toInt()) } catch (_: Exception) {}
 
             var curY = setY - sOff2
             for ((v, depth) in visibleValues) {
@@ -501,15 +533,15 @@ class ClickGuiScreen : Screen(Component.literal("ClickGUI")) {
                                 val groupName = trimText(f, "$arrow §l$pureName", maxTextW - indent)
                                 
                                 ctx.fill(px.toInt() + 4 + indent, mi2, (x + W - 6).toInt(), mi2 + 16, 0x1FFFFFFF.toInt())
-                                ctx.drawString(f, groupName, px.toInt() + 8 + indent, mi2 + 4, -1)
+                                drawText(ctx, f, groupName, px.toInt() + 8 + indent, mi2 + 4, -1)
                             }
                             isColor -> {
                                 val c = extractColor(v)
                                 val text = trimText(f, "${v.name}:", maxTextW - indent)
-                                ctx.drawString(f, text, px.toInt() + 8 + indent, mi2, -1)
+                                drawText(ctx, f, text, px.toInt() + 8 + indent, mi2, -1)
 
                                 val hexStr = "#%02X%02X%02X%02X".format(c.alpha, c.red, c.green, c.blue)
-                                ctx.drawString(f, "§7$hexStr", px.toInt() + 8 + indent, mi2 + 12, -1)
+                                drawText(ctx, f, "§7$hexStr", px.toInt() + 8 + indent, mi2 + 12, -1)
 
                                 val boxX = px.toInt() + 8 + indent
                                 val boxY = mi2 + 24
@@ -553,12 +585,12 @@ class ClickGuiScreen : Screen(Component.literal("ClickGUI")) {
                             }
                             actualVal is Boolean -> {
                                 val text = trimText(f, "${v.name}: ${if (actualVal) "§aON" else "§cOFF"}", maxTextW - indent)
-                                ctx.drawString(f, text, px.toInt() + 8 + indent, mi2 + 2, -1)
+                                drawText(ctx, f, text, px.toInt() + 8 + indent, mi2 + 2, -1)
                             }
                             isBindValue(v) -> {
                                 val dispStr = formatDisplayValue(v)
                                 val text = trimText(f, "${v.name}: §e$dispStr", maxTextW - indent)
-                                ctx.drawString(f, text, px.toInt() + 8 + indent, mi2 + 2, -1)
+                                drawText(ctx, f, text, px.toInt() + 8 + indent, mi2 + 2, -1)
                             }
                             isSlider -> {
                                 var fv = 0f; var mn = 0f; var mxr = 20f
@@ -581,12 +613,12 @@ class ClickGuiScreen : Screen(Component.literal("ClickGUI")) {
 
                                 val dispVal = if (actualVal is ClosedRange<*>) "${actualVal.start} - ${actualVal.endInclusive}" else "%.1f".format(fv)
                                 val text = trimText(f, "${v.name}: $dispVal", maxTextW - indent)
-                                ctx.drawString(f, text, px.toInt() + 8 + indent, mi2, -1)
+                                drawText(ctx, f, text, px.toInt() + 8 + indent, mi2, -1)
                             }
                             else -> {
                                 val dispStr = formatDisplayValue(v)
                                 val text = trimText(f, "${v.name}: §b$dispStr", maxTextW - indent)
-                                ctx.drawString(f, text, px.toInt() + 8 + indent, mi2 + 2, -1)
+                                drawText(ctx, f, text, px.toInt() + 8 + indent, mi2 + 2, -1)
                             }
                         }
                     } catch (_: Exception) {}
@@ -594,19 +626,18 @@ class ClickGuiScreen : Screen(Component.literal("ClickGUI")) {
                 curY += itemH
             }
 
-            ctx.disableScissor()
+            try { ctx.disableScissor() } catch (_: Exception) {}
         }
     }
 
-    override fun renderBackground(ctx: GuiGraphics, mx: Int, my: Int, dt: Float) {}
-
-    // 适配 MC 1.21+ 新版鼠标点击事件签名
-    override fun mouseClicked(mouseX: Double, mouseY: Double, button: Int): Boolean {
-        val btn = button
-        val mx = mouseX.toInt(); val my = mouseY.toInt()
+    override fun mouseClicked(click: MouseButtonEvent, doubled: Boolean): Boolean {
+        val btn = click.button()
+        val mx = click.x().toInt()
+        val my = click.y().toInt()
         val x = (minecraft!!.window.guiScaledWidth - W) / 2
         val y = (minecraft!!.window.guiScaledHeight - H) / 2
-        val tabW = (W - 24) / cats.size
+        val safeCatSize = max(1, cats.size)
+        val tabW = (W - 24) / safeCatSize
 
         if (mx in (x + 8)..(x + W - 8) && my in (y + 28)..(y + 43)) {
             searchFocus = true
@@ -769,26 +800,24 @@ class ClickGuiScreen : Screen(Component.literal("ClickGUI")) {
             }
         }
 
-        return super.mouseClicked(mouseX, mouseY, button)
+        return super.mouseClicked(click, doubled)
     }
 
-    // 适配 MC 1.21+ 滚轮事件签名
-    override fun mouseScrolled(mouseX: Double, mouseY: Double, horizontalAmount: Double, verticalAmount: Double): Boolean {
+    override fun mouseScrolled(mx: Double, my: Double, h: Double, v: Double): Boolean {
         val x = (minecraft!!.window.guiScaledWidth - W) / 2
         val panelX = x + W - panelW - 2
-        if (expanded != null && mouseX >= panelX) {
-            tOff2 = (tOff2 - verticalAmount.toFloat() * 18f).coerceAtLeast(0f)
+        if (expanded != null && mx >= panelX) {
+            tOff2 = (tOff2 - v.toFloat() * 18f).coerceAtLeast(0f)
         } else {
-            tOff = (tOff - verticalAmount.toFloat() * 18f).coerceAtLeast(0f)
+            tOff = (tOff - v.toFloat() * 18f).coerceAtLeast(0f)
         }
         return true
     }
 
-    // 适配 MC 1.21+ 键盘按键事件签名
-    override fun keyPressed(keyCode: Int, scanCode: Int, modifiers: Int): Boolean {
+    override fun keyPressed(input: KeyEvent): Boolean {
         val lv = listeningValue
+        val key = input.key()
         if (lv != null) {
-            val key = keyCode
             val targetKeyName = if (key == GLFW.GLFW_KEY_ESCAPE || key == GLFW.GLFW_KEY_DELETE) "NONE" else GLFW.glfwGetKeyName(key, 0)?.uppercase() ?: "KEY_$key"
 
             try {
@@ -815,13 +844,13 @@ class ClickGuiScreen : Screen(Component.literal("ClickGUI")) {
             return true
         }
 
-        if (keyCode == GLFW.GLFW_KEY_ESCAPE) {
+        if (key == GLFW.GLFW_KEY_ESCAPE) {
             onClose()
             return true
         }
 
         if (searchFocus) {
-            when (keyCode) {
+            when (key) {
                 GLFW.GLFW_KEY_BACKSPACE -> {
                     if (search.isNotEmpty()) search = search.dropLast(1)
                     return true
@@ -831,7 +860,7 @@ class ClickGuiScreen : Screen(Component.literal("ClickGUI")) {
                     return true
                 }
                 else -> {
-                    val n = GLFW.glfwGetKeyName(keyCode, 0)
+                    val n = GLFW.glfwGetKeyName(key, 0)
                     if (n != null && n.length == 1) {
                         search += n
                         return true
@@ -839,41 +868,70 @@ class ClickGuiScreen : Screen(Component.literal("ClickGUI")) {
                 }
             }
         }
-        return super.keyPressed(keyCode, scanCode, modifiers)
+        return super.keyPressed(input)
     }
 
-    // 适配 MC 1.21+ 字符输入事件签名
-    override fun charTyped(codePoint: Char, modifiers: Int): Boolean {
+    override fun charTyped(characterEvent: CharacterEvent): Boolean {
         if (searchFocus) {
-            if (codePoint.code > 31) {
-                search += codePoint.toString()
-                return true
-            }
+            try {
+                val obj: Any = characterEvent
+                val cls = obj.javaClass
+                var cp: Int? = null
+
+                for (m in cls.methods) {
+                    if (m.parameterCount == 0 && (m.name.equals("codepoint", true) || m.name.equals("codePoint", true) || m.name.equals("character", true))) {
+                        val res = m.invoke(obj)
+                        if (res is Int) cp = res
+                        else if (res is Char) cp = res.code
+                        if (cp != null) break
+                    }
+                }
+
+                if (cp == null) {
+                    for (f in cls.declaredFields) {
+                        if (f.type == Int::class.javaPrimitiveType || f.type == Char::class.javaPrimitiveType) {
+                            f.isAccessible = true
+                            val v = f.get(obj)
+                            if (v is Int) cp = v
+                            else if (v is Char) cp = v.code
+                            if (cp != null) break
+                        }
+                    }
+                }
+
+                if (cp != null && cp > 31) {
+                    search += cp.toChar().toString()
+                    return true
+                }
+            } catch (_: Exception) {}
         }
-        return super.charTyped(codePoint, modifiers)
+        return super.charTyped(characterEvent)
     }
 
     override fun onClose() {
-        minecraft?.setScreen(null)
+        try {
+            minecraft?.setScreen(null)
+        } catch (_: Exception) {}
         anim = 0f
     }
 
     private fun getMods(): List<ClientModule> {
-        val catObj = cats.getOrElse(cat) { ModuleCategory.COMBAT }
+        val catObj = cats.getOrNull(cat)
         
-        // 兼容 0.39 的 ModuleManager 获取逻辑
         val allModules = try {
-            ModuleManager.modules
+            ModuleManager.getModules()
         } catch (_: Exception) {
             try {
-                ModuleManager.getModules()
+                val prop = ModuleManager::class.java.methods.find { it.name == "getModules" || it.name == "modules" }
+                @Suppress("UNCHECKED_CAST")
+                (prop?.invoke(ModuleManager) as? List<ClientModule>) ?: emptyList()
             } catch (_: Exception) {
-                emptyList<ClientModule>()
+                emptyList()
             }
         }
 
         return allModules
-            .filter { it.category == catObj && it.name != "ClickGUI" }
+            .filter { (catObj == null || it.category == catObj) && it.name != "ClickGUI" }
             .filter { search.isEmpty() || it.name.contains(search, ignoreCase = true) }
     }
 }
