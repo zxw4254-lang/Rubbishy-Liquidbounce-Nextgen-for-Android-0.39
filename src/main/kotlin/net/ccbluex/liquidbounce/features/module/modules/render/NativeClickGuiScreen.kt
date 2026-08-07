@@ -11,40 +11,41 @@ import net.minecraft.client.gui.GuiGraphics
 
 /**
  * 简单的原生 Android ClickGUI（不依赖任何 Browser 后端）。
- * - 只显示每个模块的名称与 ON/OFF 按钮
+ * - 列出所有已注册的模块（`ClientModule`）并显示 ON/OFF 按钮
  * - 支持滚动、半透明背景、右侧滚动条
  */
 class NativeClickGuiScreen : Screen("ClickGUI".asPlainText()) {
 
-    /* ---------- 常量 & 状态 ---------- */
-    private val lineHeight = 20          // 每行高度
-    private val startY = 30            // 列表起始 Y 坐标
-    private var scrollOffset = 0       // 当前滚动的行数
+    /* ---------- 视觉常量 ---------- */
+    private val lineHeight = 20          // 每行的高度
+    private val startY = 30              // 列表起始 Y 坐标
+    private var scrollOffset = 0        // 当前滚动的行号
     private val widgetCache = mutableListOf<WidgetEntry>()
 
-    /** 保存模块 ↔ 按钮 的映射，滚动时用来显示/隐藏 */
+    /** 用于保存模块 ↔ 按钮 的对应关系，以便滚动时显示/隐藏 */
     private data class WidgetEntry(val module: ClientModule, var button: Button?, var y: Int)
 
-    /* ---------- 初始化（创建按钮列表） ---------- */
+    /* ---------- 初始化（创建按钮） ---------- */
     override fun init() {
-        // 清空可能残留的部件
+        // 清空可能残留的 UI 部件
         children().clear()
         widgetCache.clear()
 
         var yPos = startY
-        ModuleManager.modules.forEach { module ->
-            // 为每个模块创建一个按钮，文字显示“名称 : ON/OFF”
+        // 直接遍历 ModuleManager 中的所有模块
+        for (module in ModuleManager.modules) {
+            // 按钮文字：模块名称 + 当前状态
             val btn = Button.builder(
                 Component.literal("${module.name} : ${if (module.enabled) "§aON" else "§cOFF"}")
             ) { button ->
-                // 切换状态后立即刷新按钮文字
+                // 切换模块状态后同步按钮文字
                 module.toggle()
                 button.message = Component.literal(
                     "${module.name} : ${if (module.enabled) "§aON" else "§cOFF"}"
                 )
             }
-                .pos(20, yPos)                // 按钮位置
-                .size(200, lineHeight - 2)     // 按钮尺寸
+                .pos(20, yPos)                // 按钮在屏幕左侧的 X/Y
+                .size(200, lineHeight - 2)    // 按钮宽高
                 .build()
 
             addRenderableWidget(btn)
@@ -60,16 +61,16 @@ class NativeClickGuiScreen : Screen("ClickGUI".asPlainText()) {
         scrollX: Double,
         scrollY: Double
     ): Boolean {
-        // scrollY > 0 为向下滚动，< 0 为向上滚动 → 为让列表向相反方向移动取负号
+        // scrollY > 0 表示向下滚动（内容向上移动），取负号保持列表滚动方向一致
         val maxOffset = (widgetCache.size - (height - startY) / lineHeight).coerceAtLeast(0)
         scrollOffset = (scrollOffset - scrollY.toInt()).coerceIn(0, maxOffset)
         applyScroll()
         return true
     }
 
-    /** 根据当前 scrollOffset 隐藏/显示对应的按钮 */
+    /** 根据 `scrollOffset` 隐藏/显示对应的按钮 */
     private fun applyScroll() {
-        // 隐藏全部按钮
+        // 先全部隐藏
         widgetCache.forEach { it.button?.visible = false }
 
         val visibleRows = (height - startY) / lineHeight
@@ -107,11 +108,11 @@ class NativeClickGuiScreen : Screen("ClickGUI".asPlainText()) {
         // 3️⃣ 渲染所有子部件（按钮）
         super.render(guiGraphics, mouseX, mouseY, partialTicks)
 
-        // 4️⃣ 简易右侧滚动条（仅在需要时绘制）
+        // 4️⃣ 右侧滚动条（仅在需要时绘制）
         if (widgetCache.size * lineHeight > height - startY) {
             val barHeight = (height - startY) * (height - startY) / (widgetCache.size * lineHeight)
 
-            // 计算滚动条在 0..1 区间的比例
+            // 计算滚动条的比例（0..1）
             val maxScroll = widgetCache.size - (height - startY) / lineHeight
             val proportion = scrollOffset.toFloat() / maxScroll.coerceAtLeast(1)
 
