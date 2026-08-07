@@ -56,7 +56,7 @@ data class Module(
     fun hasProps(): Boolean = props.isNotEmpty()
 }
 
-/** 属性使用 sealed class 表示四种不同的类型 */
+/** Property 使用 sealed class 表示四种不同的属性类型 */
 sealed class Property {
     abstract var label: String
     abstract var layoutY: Float
@@ -200,7 +200,7 @@ class NativeClickGuiScreen : Screen(Component.literal("Native ClickGUI")) {
     }
 
     /** 主渲染入口，符合 Screen.render(PoseStack, int, int, float) */
-    override fun render(poseStack: PoseStack, mouseX: Int, mouseY: Int, tickDelta: Float) {
+    fun render(poseStack: PoseStack, mouseX: Int, mouseY: Int, tickDelta: Float) {
         // 1️⃣ 背景（半透明黑）
         GL11.glClearColor(0f, 0f, 0f, 0.85f)
         GL11.glClear(GL11.GL_COLOR_BUFFER_BIT)
@@ -250,12 +250,12 @@ class NativeClickGuiScreen : Screen(Component.literal("Native ClickGUI")) {
 
     /** 渲染单个模块行以及（可选的）属性面板 */
     private fun renderModule(poseStack: PoseStack, mod: Module, baseX: Float, baseY: Float) {
-        // 背景（Hover 时可使用 MOD_BG_HOVER，这里先使用普通颜色）
+        // 背景（Hover 时可改为 MOD_BG_HOVER，这里使用普通颜色）
         val bgColor = if (mod.expanded) MOD_BG_HOVER else MOD_BG
         drawRoundedRect(baseX, baseY, catWidth(), moduleHeight(), 4f * S, bgColor)
 
         // TODO：绘制模块名称文字
-        // 例如：mc.font.draw(poseStack, mod.name, (baseX + 6f * S).toInt(), (baseY + 14f * S).toInt(), 0xFFFFFFFF.toInt())
+        // 示例：mc.font.draw(poseStack, mod.name, (baseX + 6f * S).toInt(), (baseY + 14f * S).toInt(), 0xFFFFFFFF.toInt())
 
         // 开关指示圆点（动画可映射到半径或颜色）
         val toggleRadius = 5f * S
@@ -301,6 +301,6 @@ class NativeClickGuiScreen : Screen(Component.literal("Native ClickGUI")) {
     private fun propertyHeight() = 17f * 4f * S // 简化为统一高度
 
     override fun onClose() {
-        // 关闭 GUI 时的清理逻辑（若需要）可在此实现
+        // 当用户关闭 GUI 时可执行的清理逻辑，当前留空。
     }
 }
